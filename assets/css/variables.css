@@ -1,0 +1,112 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   POLONIO — Design System Variables
+   Cyber-purple theme with neon accents for a "Hacker Elegante" aesthetic
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ─── Background Colors ───────────────────────────────────────────────────── */
+  --bg-primary: #0a0a14;
+  --bg-secondary: #11111f;
+  --bg-tertiary: #181830;
+  --bg-card: #1a1a35;
+  --bg-card-hover: #222250;
+  --bg-sidebar: #0d0d1a;
+  --bg-input: #15152a;
+  --bg-modal: rgba(5, 5, 15, 0.85);
+  --bg-code: #0c0c1a;
+  --bg-tooltip: #252545;
+
+  /* ─── Accent Colors ───────────────────────────────────────────────────────── */
+  --accent-primary: #a855f7;
+  --accent-primary-hover: #c084fc;
+  --accent-primary-dim: rgba(168, 85, 247, 0.15);
+  --accent-secondary: #06ffa5;
+  --accent-secondary-dim: rgba(6, 255, 165, 0.12);
+  --accent-tertiary: #00d4ff;
+  --accent-tertiary-dim: rgba(0, 212, 255, 0.1);
+  --accent-danger: #ff3860;
+  --accent-danger-dim: rgba(255, 56, 96, 0.12);
+  --accent-warning: #ffaa00;
+  --accent-warning-dim: rgba(255, 170, 0, 0.12);
+
+  /* ─── Text Colors ─────────────────────────────────────────────────────────── */
+  --text-primary: #e8eaf0;
+  --text-secondary: #9ca3b8;
+  --text-muted: #5a6178;
+  --text-inverse: #0a0a14;
+  --text-accent: var(--accent-primary);
+  --text-success: var(--accent-secondary);
+  --text-link: var(--accent-tertiary);
+
+  /* ─── Border ──────────────────────────────────────────────────────────────── */
+  --border-subtle: rgba(168, 85, 247, 0.12);
+  --border-default: rgba(168, 85, 247, 0.25);
+  --border-strong: rgba(168, 85, 247, 0.5);
+  --border-success: rgba(6, 255, 165, 0.4);
+  --border-danger: rgba(255, 56, 96, 0.4);
+
+  /* ─── Shadows & Glow ──────────────────────────────────────────────────────── */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.35);
+  --glow-purple: 0 0 20px rgba(168, 85, 247, 0.25), 0 0 40px rgba(168, 85, 247, 0.1);
+  --glow-green: 0 0 20px rgba(6, 255, 165, 0.2), 0 0 40px rgba(6, 255, 165, 0.08);
+  --glow-cyan: 0 0 15px rgba(0, 212, 255, 0.2);
+  --glow-danger: 0 0 15px rgba(255, 56, 96, 0.2);
+
+  /* ─── Typography ──────────────────────────────────────────────────────────── */
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-code: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-display: 'Space Grotesk', 'Inter', sans-serif;
+
+  --text-xs: 0.7rem;
+  --text-sm: 0.8rem;
+  --text-base: 0.9rem;
+  --text-md: 1rem;
+  --text-lg: 1.15rem;
+  --text-xl: 1.4rem;
+  --text-2xl: 1.8rem;
+  --text-3xl: 2.4rem;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.7;
+
+  /* ─── Spacing ─────────────────────────────────────────────────────────────── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ─── Border Radius ───────────────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* ─── Transitions ─────────────────────────────────────────────────────────── */
+  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-spring: 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ─── Layout ──────────────────────────────────────────────────────────────── */
+  --sidebar-width: 240px;
+  --sidebar-collapsed: 64px;
+  --header-height: 56px;
+  --terminal-height: 220px;
+}

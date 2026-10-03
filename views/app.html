@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://polonio.offs.es;">
+  <title>Polonio</title>
+  <link rel="stylesheet" href="../assets/css/variables.css">
+  <link rel="stylesheet" href="../assets/css/base.css">
+  <link rel="stylesheet" href="../assets/css/components.css">
+  <link rel="stylesheet" href="../assets/css/layout.css">
+  <link rel="stylesheet" href="../assets/css/views.css">
+  <link rel="stylesheet" href="../assets/css/background.css">
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <div id="login-view" class="login-view">
+    <canvas id="bgCanvas"></canvas>
+    <div class="login-card animate-slideUp">
+      <div class="login-logo">
+        <span class="login-logo-text">POLONIO</span>
+      </div>
+      <p class="login-subtitle">Web3 Security Training Platform</p>
+      <div id="login-error" class="login-error"></div>
+      <form id="login-form">
+        <div class="form-group">
+          <label class="form-label" for="login-username">Usuario</label>
+          <input class="input" type="text" id="login-username" placeholder="Nombre de usuario" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="login-token">Token</label>
+          <input class="input input-code" type="password" id="login-token" placeholder="API token" required autocomplete="current-password">
+        </div>
+        <div class="form-group" style="flex-direction:row; align-items:center; gap:var(--space-2);">
+          <input type="checkbox" id="login-remember">
+          <label class="form-label" for="login-remember" style="margin-bottom:0;">Recordar</label>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%; margin-top:var(--space-4);" id="login-submit">
+          <span id="login-btn-text">Acceder</span>
+          <div id="login-spinner" class="spinner" style="display:none;"></div>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- APP SHELL -->
+  <div id="app-shell" class="app-shell" style="display:none;">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">POLONIO</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item active" data-view="dashboard">
+          <span class="nav-item-icon">&#9632;</span>
+          <span>Dashboard</span>
+        </a>
+        <a class="nav-item" data-view="challenges">
+          <span class="nav-item-icon">&#9654;</span>
+          <span>Retos</span>
+        </a>
+        <a class="nav-item" data-view="console">
+          <span class="nav-item-icon">&#62;_</span>
+          <span>Consola</span>
+        </a>
+        <a class="nav-item" data-view="inspector">
+          <span class="nav-item-icon">&#9881;</span>
+          <span>Inspector</span>
+        </a>
+        <a class="nav-item" data-view="settings">
+          <span class="nav-item-icon">&#9881;</span>
+          <span>Config</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="sidebar-status">
+          <span id="blockchain-dot" class="status-dot status-dot-inactive"></span>
+          <span id="blockchain-status-text">Desconectado</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main-area">
+      <header class="content-header">
+        <h2 class="content-header-title" id="view-title">Dashboard</h2>
+        <div class="content-header-actions">
+          <button class="btn btn-sm btn-success" id="btn-start-blockchain">Iniciar Nodo</button>
+          <button class="btn btn-sm btn-danger" id="btn-stop-blockchain" style="display:none;">Detener</button>
+          <button class="btn btn-sm btn-warning" id="btn-reset-blockchain" style="display:none;">Reiniciar</button>
+          <button class="btn btn-sm btn-ghost" id="btn-logout">Salir</button>
+        </div>
+      </header>
+
+      <div class="content-body" id="content-body">
+
+        <!-- DASHBOARD -->
+        <div id="view-dashboard" class="view-container active">
+          <div class="dashboard-grid">
+            <div class="stat-card">
+              <span class="stat-card-label">Estado</span>
+              <span class="stat-card-value" id="stat-status">Inactivo</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-label">Bloque</span>
+              <span class="stat-card-value" id="stat-block">--</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-label">Retos activos</span>
+              <span class="stat-card-value" id="stat-challenges">0</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-label">Chain ID</span>
+              <span class="stat-card-value" id="stat-chain">31337</span>
+            </div>
+          </div>
+          <div style="margin-top:var(--space-6);">
+            <h3 style="margin-bottom:var(--space-3);">Cuentas disponibles</h3>
+            <div id="accounts-list" class="accounts-list">
+              <p class="text-muted">Inicia el nodo para ver las cuentas.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- CHALLENGES LIST -->
+        <div id="view-challenges" class="view-container">
+          <div class="challenges-header">
+            <div class="challenges-filters">
+              <button class="filter-btn active" data-level="all">Todos</button>
+              <button class="filter-btn" data-level="facil">Basico</button>
+              <button class="filter-btn" data-level="medio">Intermedio</button>
+              <button class="filter-btn" data-level="dificil">Avanzado</button>
+              <button class="filter-btn" data-level="active">Desplegados</button>
+            </div>
+          </div>
+          <div class="challenges-grid" id="challenges-grid"></div>
+        </div>
+
+        <!-- CHALLENGE DETAIL -->
+        <div id="view-challenge-detail" class="view-container">
+          <button class="btn btn-ghost btn-sm" id="btn-back-challenges" style="margin-bottom:var(--space-4);">&#8592; Volver</button>
+          <div class="challenge-detail-layout">
+            <div class="challenge-info-panel">
+              <h2 id="detail-challenge-name"></h2>
+              <p id="detail-challenge-desc" class="text-secondary"></p>
+              <div id="detail-challenge-badge" style="margin:var(--space-3) 0;"></div>
+              <div class="challenge-actions">
+                <button class="btn btn-primary" id="btn-activate-challenge" style="display:none;">Desplegar</button>
+                <button class="btn btn-success" id="btn-validate-challenge" style="display:none;">Verificar solucion</button>
+                <button class="btn btn-ghost" id="btn-writeup-challenge" style="display:none;">Ver Writeup</button>
+                <button class="btn btn-ghost btn-sm" id="btn-mark-completed" style="display:none;">Marcar completado</button>
+              </div>
+              <div style="margin-top:var(--space-5);">
+                <h4 style="margin-bottom:var(--space-2);">Contratos</h4>
+                <div id="detail-contracts-list" class="contracts-list"></div>
+              </div>
+            </div>
+            <div class="challenge-code-panel">
+              <div class="code-panel">
+                <div class="code-panel-header">
+                  <span class="code-panel-title" id="detail-code-title">Selecciona un contrato</span>
+                  <button class="btn btn-ghost btn-sm" id="btn-copy-code">Copiar</button>
+                </div>
+                <div class="code-panel-content">
+                  <pre id="detail-code-display"><code>// Selecciona un contrato del listado para ver su codigo fuente.</code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CONSOLE (scripting interface) -->
+        <div id="view-console" class="view-container">
+          <div class="console-layout">
+            <div class="console-editor-section">
+              <div class="code-panel">
+                <div class="code-panel-header">
+                  <div style="display:flex; gap:var(--space-2);">
+                    <button class="btn btn-sm btn-ghost console-tab active" data-tab="editor" id="tab-editor">Editor</button>
+                    <button class="btn btn-sm btn-ghost console-tab" data-tab="source" id="tab-source">Codigo Fuente</button>
+                  </div>
+                  <div style="display:flex; gap:var(--space-2);">
+                    <button class="btn btn-sm btn-success" id="btn-run-script">Ejecutar JS</button>
+                    <button class="btn btn-sm btn-secondary" id="btn-compile-script">Compilar Sol</button>
+                    <button class="btn btn-sm btn-primary" id="btn-deploy-script">Desplegar Sol</button>
+                  </div>
+                </div>
+                <div class="code-panel-content" style="padding:0; position:relative;">
+                  <textarea id="script-editor" class="script-textarea" spellcheck="false" placeholder="// Variables disponibles: web3, accounts, contracts, getContract()
+// accounts = tus cuentas (sin la admin)
+// contracts = { NombreContrato: web3.eth.Contract }
+//
+// Ejemplo — leer owner de un contrato desplegado:
+const owner = await contracts['TxOriginWallet'].methods.owner().call();
+console.log('Owner:', owner);
+
+// Ejemplo — enviar ETH a un contrato:
+await web3.eth.sendTransaction({
+  from: accounts[0],
+  to: contracts['FallbackVault'].options.address,
+  value: web3.utils.toWei('0.0001', 'ether')
+});
+
+// Ejemplo — ABI manual (usa getContract para auto-fix):
+const c = getContract([{...abi...}], '0xDIR');"></textarea>
+                  <div id="source-viewer" class="source-viewer" style="display:none;">
+                    <div class="source-viewer-header">
+                      <select class="select select-sm" id="source-contract-select">
+                        <option value="">-- Contrato --</option>
+                      </select>
+                    </div>
+                    <pre class="source-viewer-code" id="source-code-display"><code>// Selecciona un contrato desplegado para ver su codigo</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="console-tools-section">
+              <div class="console-interact-panel">
+                <h4>Interaccion rapida</h4>
+                <div class="form-group">
+                  <label class="form-label">Contrato</label>
+                  <select class="select" id="console-contract-select">
+                    <option value="">-- Seleccionar --</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Cuenta</label>
+                  <select class="select" id="console-account-select"></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Metodo</label>
+                  <input class="input input-code" id="console-method" placeholder="functionName">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Args (coma-sep)</label>
+                  <input class="input input-code" id="console-args" placeholder="arg1, arg2">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Value (ETH)</label>
+                  <input class="input input-code" id="console-value" value="0">
+                </div>
+                <button class="btn btn-primary" id="btn-console-invoke" style="width:100%;">Invocar</button>
+              </div>
+              <div class="console-output-panel">
+                <h4>Output</h4>
+                <div id="console-output" class="console-output"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- INSPECTOR -->
+        <div id="view-inspector" class="view-container">
+          <div class="inspector-grid">
+            <div class="inspector-section">
+              <h4>Storage Reader</h4>
+              <div class="form-group">
+                <label class="form-label">Direccion</label>
+                <input class="input input-code" id="inspector-address" placeholder="0x...">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Slot</label>
+                <input class="input input-code" id="inspector-slot" value="0">
+              </div>
+              <button class="btn btn-primary" id="btn-read-storage">Leer</button>
+              <div id="storage-result" class="storage-result" style="display:none;"></div>
+            </div>
+            <div class="inspector-section">
+              <h4>Balance / Code</h4>
+              <div class="form-group">
+                <label class="form-label">Direccion</label>
+                <input class="input input-code" id="inspector-info-address" placeholder="0x...">
+              </div>
+              <button class="btn btn-primary" id="btn-inspect-address">Consultar</button>
+              <div id="address-info-result" class="storage-result" style="display:none;"></div>
+            </div>
+            <div class="inspector-section" style="grid-column:1/-1;">
+              <h4>Transaction Receipt</h4>
+              <div class="form-group">
+                <label class="form-label">TX Hash</label>
+                <input class="input input-code" id="inspector-tx-hash" placeholder="0x...">
+              </div>
+              <button class="btn btn-primary" id="btn-inspect-tx">Consultar</button>
+              <div id="tx-result" class="storage-result" style="display:none;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SETTINGS -->
+        <div id="view-settings" class="view-container">
+          <div class="settings-section">
+            <h3>Blockchain</h3>
+            <div class="settings-row">
+              <div><div class="settings-label">Puerto RPC</div></div>
+              <input class="input input-code" style="width:100px;" value="8545" id="setting-port">
+            </div>
+            <div class="settings-row">
+              <div><div class="settings-label">Chain ID</div></div>
+              <input class="input input-code" style="width:100px;" value="31337" id="setting-chain-id">
+            </div>
+            <div class="settings-row">
+              <div><div class="settings-label">Cuentas</div></div>
+              <input class="input input-code" style="width:100px;" value="10" id="setting-accounts">
+            </div>
+            <div class="settings-row">
+              <div><div class="settings-label">Balance (ETH)</div></div>
+              <input class="input input-code" style="width:100px;" value="10000" id="setting-balance">
+            </div>
+          </div>
+          <div class="settings-section">
+            <h3>Sesion</h3>
+            <div class="settings-row">
+              <div><div class="settings-label">Usuario</div><div class="settings-desc" id="settings-username">--</div></div>
+              <button class="btn btn-danger btn-sm" id="btn-settings-logout">Cerrar sesion</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Terminal -->
+      <div class="terminal-panel" id="terminal-panel">
+        <div class="terminal-header" id="terminal-header">
+          <span class="terminal-header-title">Log</span>
+        </div>
+        <div class="terminal-content" id="terminal-content"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- WRITEUP MODAL -->
+  <div class="writeup-modal" id="writeup-modal" style="display:none;">
+    <div class="writeup-modal-backdrop" id="writeup-modal-backdrop"></div>
+    <div class="writeup-modal-content">
+      <div class="writeup-modal-header">
+        <h3 id="writeup-modal-title">Writeup</h3>
+        <button class="btn btn-ghost btn-sm" id="writeup-modal-close">&times;</button>
+      </div>
+      <div class="writeup-modal-body" id="writeup-modal-body"></div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container"></div>
+  <script src="app.js"></script>
+</body>
+</html>

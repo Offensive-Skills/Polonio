@@ -1,0 +1,96 @@
+{
+    "name": "polonio",
+    "version": "1.0.0",
+    "description": "Plataforma de entrenamiento en seguridad Web3 — Despliega smart contracts en blockchain local y practica ataques en entornos seguros",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron .",
+        "dev": "electron . --dev",
+        "dist": "electron-builder --linux deb AppImage rpm",
+        "dist:linux:x64": "electron-builder --linux deb AppImage rpm --x64",
+        "dist:linux:arm64": "electron-builder --linux deb AppImage rpm --arm64",
+        "dist:mac:arm64": "electron-builder --mac dmg --arm64"
+    },
+    "keywords": [
+        "cibersecurity",
+        "ciberseguridad",
+        "pentesting",
+        "red team",
+        "hack",
+        "hacking",
+        "Blockchain",
+        "SmartContracts",
+        "Ethereum",
+        "Solidity",
+        "web3",
+        "anvil",
+        "foundry"
+    ],
+    "author": {
+        "name": "Offensive Skills",
+        "email": "contacto@offs.es"
+    },
+    "license": "SEE LICENSE IN LICENSE.md",
+    "dependencies": {
+        "@openzeppelin/contracts": "^5.0.0",
+        "solc": "^0.8.28",
+        "web3": "^4.16.0"
+    },
+    "devDependencies": {
+        "electron": "^41.0.0",
+        "electron-builder": "^26.0.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Offensive-Skills/Polonio.git"
+    },
+    "bugs": {
+        "url": "https://github.com/Offensive-Skills/Polonio/issues"
+    },
+    "homepage": "https://github.com/Offensive-Skills/Polonio#readme",
+    "build": {
+        "appId": "com.offensiveskills.polonio",
+        "productName": "Polonio",
+        "asar": true,
+        "publish": [
+            {
+                "provider": "github",
+                "owner": "Offensive-Skills",
+                "repo": "Polonio"
+            }
+        ],
+        "files": [
+            "main.js",
+            "preload.js",
+            "blockchain/**",
+            "challenges/**",
+            "compiler/**",
+            "controllers/**",
+            "forge/**",
+            "utils/**",
+            "views/**",
+            "assets/**",
+            "package.json"
+        ],
+        "directories": {
+            "buildResources": "build"
+        },
+        "linux": {
+            "target": [
+                "deb",
+                "rpm",
+                "AppImage"
+            ],
+            "category": "Utility",
+            "icon": "assets/images/logo_polonio.png",
+            "artifactName": "polonio_${version}_${arch}.${ext}"
+        },
+        "mac": {
+            "target": [
+                "dmg"
+            ],
+            "category": "public.app-category.utilities",
+            "artifactName": "polonio_${version}_mac_${arch}.${ext}"
+        }
+    }
+}

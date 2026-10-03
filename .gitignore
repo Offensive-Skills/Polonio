@@ -1,0 +1,20 @@
+### Git Ignore Files
+
+# Node generated files
+node_modules/
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Variables de entorno / secretos
+.env
+.env.*
+
+# Archivos de SO / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

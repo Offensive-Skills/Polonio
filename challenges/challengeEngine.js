@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { Logger } = require('../utils/logger');
+const { createResolver } = require('./references');
 
 const logger = new Logger('challenge-engine');
 
@@ -90,9 +91,10 @@ class ChallengeEngine {
   }
 
   /**
-   * Activate a challenge: download sources, deploy contracts in order.
-   * Includes rollback: if any contract fails to deploy, previously deployed
-   * contracts from this activation are removed from storage.
+   * Activate a challenge: download sources and metadata, deploy contracts in
+   * order and run the setup actions from metadata.json.
+   * If anything fails, the contracts deployed by this activation are removed
+   * from the registry and the challenge is not marked as active.
    */
   async activateChallenge(challengeName, token) {
     logger.info(`Activating challenge: ${challengeName}`);
@@ -102,6 +104,9 @@ class ChallengeEngine {
     if (!Array.isArray(smartContracts) || smartContracts.length === 0) {
       throw new Error('No smartcontracts found for this challenge');
     }
+
+    // A new activation replaces any previous deployment of the same challenge
+    this.storageService.removeDeployedContractsForChallenge(challengeName);
 
     // 2. Download each contract source
     const challengeDir = this.storageService.getChallengeDir(challengeName);
@@ -113,11 +118,13 @@ class ChallengeEngine {
       fs.writeFileSync(filePath, code, 'utf-8');
     }
 
-    // 2b. Download metadata (validation rules, hints)
+    // 2b. Download metadata (deploy values, setup, hints, validation).
+    // A stale copy from a previous activation must never be reused.
+    const metadataPath = path.join(challengeDir, 'metadata.json');
+    if (fs.existsSync(metadataPath)) fs.unlinkSync(metadataPath);
     try {
       const metadataRes = await this._apiPost('/getMetadata', { token, challenge_name: challengeName });
       if (metadataRes && Object.keys(metadataRes).length > 0) {
-        const metadataPath = path.join(challengeDir, 'metadata.json');
         fs.writeFileSync(metadataPath, JSON.stringify(metadataRes, null, 2), 'utf-8');
       }
     } catch (err) {
@@ -127,47 +134,50 @@ class ChallengeEngine {
     // 3. Sort by deploy_order
     smartContracts.sort((a, b) => a.deploy_order - b.deploy_order);
 
-    // 4. Deploy each contract in order (with rollback on failure)
+    // 4. Deploy each contract in order, then run the setup actions
     const deployedContracts = [];
-    const metadata = this._getChallengeMetadata(challengeName);
-    const deployValues = (metadata && metadata.deploy_values) || {};
+    const metadata = this._getChallengeMetadata(challengeName) || {};
+    const deployValues = metadata.deploy_values || {};
 
-    for (const sc of smartContracts) {
-      const contractFileName = `${path.basename(String(sc.name))}.sol`;
-      const constructorArgs = this._buildConstructorArgs(
-        sc.constructor_params || [],
-        deployedContracts
-      );
-
-      const postDeploy = sc.post_deploy || [];
-      const value = deployValues[sc.name] || '0';
-
-      try {
-        const result = await this.contractService.deployChallenge(
-          challengeName,
-          contractFileName,
-          constructorArgs,
-          postDeploy,
-          value
+    try {
+      for (const sc of smartContracts) {
+        const contractName = path.basename(String(sc.name));
+        const contractFileName = `${contractName}.sol`;
+        const constructorArgs = this._buildConstructorArgs(
+          sc.constructor_params || [],
+          deployedContracts
         );
+        const value = deployValues[sc.name] || '0';
 
-        deployedContracts.push({
-          name: sc.name,
-          address: result.address,
-          abi: result.abi,
-          fileName: contractFileName,
-        });
+        try {
+          const result = await this.contractService.deployChallenge(
+            challengeName,
+            contractFileName,
+            contractName,
+            constructorArgs,
+            value
+          );
 
-        logger.info(`Deployed ${sc.name} at ${result.address}`);
-      } catch (deployErr) {
-        // Rollback: remove contracts deployed during this activation from storage
-        logger.error(`Failed to deploy ${sc.name}, rolling back`, deployErr);
-        this.storageService.removeDeployedContractsForChallenge(challengeName);
-        throw new Error(
-          `Failed to deploy "${sc.name}": ${deployErr.message}. ` +
-          `Rollback: ${deployedContracts.length} previously deployed contract(s) removed from registry.`
-        );
+          deployedContracts.push({
+            name: sc.name,
+            address: result.address,
+            abi: result.abi,
+            fileName: contractFileName,
+          });
+
+          logger.info(`Deployed ${sc.name} at ${result.address}`);
+        } catch (deployErr) {
+          throw new Error(`Failed to deploy "${sc.name}": ${deployErr.message}`);
+        }
       }
+
+      await this._runSetup(metadata.setup || [], deployedContracts);
+    } catch (err) {
+      logger.error(`Activation of ${challengeName} failed, rolling back`, err);
+      this.storageService.removeDeployedContractsForChallenge(challengeName);
+      throw new Error(
+        `${err.message}. Rollback: ${deployedContracts.length} deployed contract(s) removed from registry.`
+      );
     }
 
     // 5. Store challenge state (include validation rules from metadata)
@@ -176,7 +186,7 @@ class ChallengeEngine {
       active: true,
       contracts: deployedContracts,
       activatedAt: new Date().toISOString(),
-      validation: metadata && metadata.validation ? metadata.validation : null,
+      validation: metadata.validation || null,
     });
 
     return {
@@ -298,6 +308,58 @@ class ChallengeEngine {
     }
 
     return args;
+  }
+
+  /**
+   * Run the setup actions declared in metadata.json after every contract is
+   * deployed. Supported actions:
+   *   { "action": "call", "target": "<contract>", "method": "<fn>", "args": [...],
+   *     "from": "<ref>", "value": "<ether>" }
+   *   { "action": "fund", "to": "<ref or address>", "amount": "<ether>", "from": "<ref>" }
+   * Arguments accept the references described in references.js. "from"
+   * defaults to "$deployer". Any failure aborts the activation.
+   */
+  async _runSetup(actions, deployedContracts) {
+    if (!Array.isArray(actions) || actions.length === 0) return;
+
+    const web3 = this.contractService.web3Provider.getWeb3();
+    const accounts = await this.contractService.web3Provider.getAccounts();
+    const resolve = createResolver({ web3, accounts, contracts: deployedContracts });
+
+    for (const [i, action] of actions.entries()) {
+      const label = `setup[${i}] ${action.action}`;
+      const from = resolve(action.from || '$deployer');
+
+      try {
+        switch (action.action) {
+          case 'call': {
+            const target = deployedContracts.find((c) => c.name === action.target);
+            if (!target) throw new Error(`target "${action.target}" not deployed`);
+            const contract = new web3.eth.Contract(target.abi, target.address);
+            if (typeof contract.methods[action.method] !== 'function') {
+              throw new Error(`method "${action.method}" not found in ${action.target}`);
+            }
+            const method = contract.methods[action.method](...resolve(action.args || []));
+            const value = web3.utils.toWei(String(action.value || '0'), 'ether');
+            const gas = await method.estimateGas({ from, value });
+            await method.send({ from, value, gas: Math.floor(Number(gas) * 1.3) });
+            logger.info(`${label}: ${action.target}.${action.method}() OK`);
+            break;
+          }
+          case 'fund': {
+            const to = resolve(action.to);
+            const value = web3.utils.toWei(String(action.amount || '0'), 'ether');
+            await web3.eth.sendTransaction({ from, to, value });
+            logger.info(`${label}: ${action.amount} ETH -> ${to} OK`);
+            break;
+          }
+          default:
+            throw new Error(`unknown action "${action.action}"`);
+        }
+      } catch (err) {
+        throw new Error(`Setup failed at ${label}: ${err.message}`);
+      }
+    }
   }
 
   /**

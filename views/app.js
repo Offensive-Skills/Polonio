@@ -412,14 +412,26 @@ async function refreshConsoleContracts() {
   const sel = document.getElementById('console-contract-select');
   const srcSel = document.getElementById('source-contract-select');
   const deployed = await window.polonio.contracts.getDeployed();
+  const userContracts = await window.polonio.contracts.getUserContracts();
   sel.innerHTML = '<option value="">-- Seleccionar --</option>';
   srcSel.innerHTML = '<option value="">-- Contrato --</option>';
+  const challengeNames = new Set();
   if (Array.isArray(deployed)) {
     deployed.forEach(c => {
       const name = c.contractName || c.fileName;
       const addrShort = c.address.slice(0, 10);
+      challengeNames.add(name.toLowerCase());
       sel.innerHTML += `<option value="${name}">${name} (${addrShort}...)</option>`;
       srcSel.innerHTML += `<option value="${name}" data-challenge="${c.challengeName || ''}">${name} (${addrShort}...)</option>`;
+    });
+  }
+  if (Array.isArray(userContracts)) {
+    // Latest deployment of each user contract name (the one the console resolves)
+    const latest = new Map();
+    userContracts.forEach(c => latest.set(c.contractName || c.title, c));
+    latest.forEach((c, name) => {
+      if (challengeNames.has(String(name).toLowerCase())) return;
+      sel.innerHTML += `<option value="${name}">${name} (${c.address.slice(0, 10)}...) [tuyo]</option>`;
     });
   }
 }
@@ -431,7 +443,9 @@ async function refreshConsoleAccounts() {
     const accs = await window.polonio.blockchain.getAccounts();
     // Skip account[0] (deployer/admin) — user accounts start from index 1
     const userAccs = accs.slice(1);
-    sel.innerHTML = userAccs.map((a, i) => `<option value="${i + 1}">[${i}] ${a.address.slice(0, 12)}...</option>`).join('');
+    const options = userAccs.map((a, i) => `<option value="${i + 1}">[${i}] ${a.address.slice(0, 12)}...</option>`).join('');
+    sel.innerHTML = options;
+    document.getElementById('deploy-account-select').innerHTML = options;
   } catch { /* */ }
 }
 
@@ -480,16 +494,51 @@ async function loadSourceCode() {
   }
 }
 
+/**
+ * Parse an arguments field: a JSON array ("[1, \"a\", [2, 3]]") or a
+ * comma-separated list ("1, a").
+ */
+function parseArgs(str) {
+  const text = (str || '').trim();
+  if (!text) return [];
+  if (text.startsWith('[')) {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed)) throw new Error('Los argumentos JSON deben ser un array');
+    return parsed;
+  }
+  return text.split(',').map(a => a.trim());
+}
+
+/**
+ * Deployable contracts of the editor source, in declaration order
+ * (imported contracts, interfaces and abstract contracts are excluded).
+ */
+function deployableContracts(res, src) {
+  const position = (name) => {
+    const m = new RegExp(`\\bcontract\\s+${name}\\b`).exec(src);
+    return m ? m.index : -1;
+  };
+  return Object.entries(res.contracts || {})
+    .filter(([name, c]) => c.sourceFile === 'Contract.sol' && c.bytecode && c.bytecode.length > 0 && position(name) >= 0)
+    .map(([name]) => name)
+    .sort((a, b) => position(a) - position(b));
+}
+
 async function compileScript() {
   const src = document.getElementById('script-editor').value;
   if (!src.trim()) { showToast('Escribe codigo Solidity', 'warning'); return null; }
   consoleOutput('> Compilando...', 'info');
   const res = await window.polonio.compiler.compile(src);
   if (res.success) {
-    consoleOutput(`OK: ${Object.keys(res.contracts).join(', ')}`, 'success');
+    const names = deployableContracts(res, src);
+    const sel = document.getElementById('deploy-contract-select');
+    sel.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('')
+      || '<option value="">-- Sin contratos desplegables --</option>';
+    if (names.length) sel.value = names[names.length - 1];
+    consoleOutput(`OK: ${names.join(', ') || 'sin contratos desplegables'}`, 'success');
     return res;
   } else {
-    res.errors.forEach(e => consoleOutput(e.message || e, 'error'));
+    (res.errors || [res.error]).forEach(e => consoleOutput((e && e.message) || e, 'error'));
     return null;
   }
 }
@@ -497,11 +546,35 @@ async function compileScript() {
 async function deployScript() {
   const src = document.getElementById('script-editor').value;
   if (!src.trim()) { showToast('Escribe codigo Solidity', 'warning'); return; }
-  consoleOutput('> Compilando y desplegando...', 'info');
-  const res = await window.polonio.contracts.deployUser({ title: 'Script', source: src, fileName: 'Script.sol', constructorArgs: [] });
+
+  let constructorArgs;
+  try {
+    constructorArgs = parseArgs(document.getElementById('deploy-args').value);
+  } catch (err) {
+    consoleOutput(`Args invalidos: ${err.message}`, 'error');
+    return;
+  }
+
+  // Compile first so the contract selector always matches the current source
+  const compiled = await compileScript();
+  if (!compiled) return;
+  const contractName = document.getElementById('deploy-contract-select').value || null;
+  const value = document.getElementById('deploy-value').value.trim() || '0';
+  const accountIndex = parseInt(document.getElementById('deploy-account-select').value) || 1;
+
+  consoleOutput(`> Desplegando ${contractName || ''}...`, 'info');
+  const res = await window.polonio.contracts.deployUser({
+    title: 'Script',
+    source: src,
+    fileName: 'Script.sol',
+    contractName,
+    constructorArgs,
+    value,
+    accountIndex,
+  });
   if (res.success) {
-    consoleOutput(`Desplegado en: ${res.address}`, 'success');
-    terminalLog(`Deploy => ${res.address}`);
+    consoleOutput(`${res.contractName} desplegado en: ${res.address}`, 'success');
+    terminalLog(`Deploy ${res.contractName} => ${res.address}`);
     refreshConsoleContracts();
   } else {
     consoleOutput(`Error: ${res.error}`, 'error');
@@ -518,7 +591,13 @@ async function invokeFromConsole() {
   if (!contractName) { showToast('Selecciona un contrato', 'warning'); return; }
   if (!method) { showToast('Introduce un metodo', 'warning'); return; }
 
-  const args = argsStr ? argsStr.split(',').map(a => a.trim()) : [];
+  let args;
+  try {
+    args = parseArgs(argsStr);
+  } catch (err) {
+    consoleOutput(`Args invalidos: ${err.message}`, 'error');
+    return;
+  }
   const abiData = await window.polonio.contracts.getAbi(contractName);
   if (!abiData) { consoleOutput('ABI no encontrado', 'error'); return; }
 

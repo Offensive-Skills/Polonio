@@ -218,6 +218,27 @@ const c = getContract([{...abi...}], '0xDIR');"></textarea>
             </div>
             <div class="console-tools-section">
               <div class="console-interact-panel">
+                <h4>Despliegue Solidity</h4>
+                <div class="form-group">
+                  <label class="form-label">Contrato</label>
+                  <select class="select" id="deploy-contract-select">
+                    <option value="">-- Compila primero --</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Cuenta</label>
+                  <select class="select" id="deploy-account-select"></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Args constructor (coma-sep o JSON)</label>
+                  <input class="input input-code" id="deploy-args" placeholder="arg1, arg2">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Value (ETH)</label>
+                  <input class="input input-code" id="deploy-value" value="0">
+                </div>
+              </div>
+              <div class="console-interact-panel">
                 <h4>Interaccion rapida</h4>
                 <div class="form-group">
                   <label class="form-label">Contrato</label>
@@ -234,7 +255,7 @@ const c = getContract([{...abi...}], '0xDIR');"></textarea>
                   <input class="input input-code" id="console-method" placeholder="functionName">
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Args (coma-sep)</label>
+                  <label class="form-label">Args (coma-sep o JSON)</label>
                   <input class="input input-code" id="console-args" placeholder="arg1, arg2">
                 </div>
                 <div class="form-group">

@@ -1,6 +1,7 @@
 'use strict';
 
 const { Logger } = require('../utils/logger');
+const { createResolver } = require('./references');
 
 const logger = new Logger('validator');
 
@@ -16,6 +17,10 @@ const logger = new Logger('validator');
  * - contract_destroyed: Contract code is empty (selfdestruct)
  * - custom_call: Method call returns expected value
  * - token_balance: ERC20 token balance check
+ * - call_reverts: Simulated transaction reverts (e.g. a denial of service)
+ *
+ * Arguments, accounts and expected values accept the references described in
+ * references.js ("$player", "$contract:Name", "$ether:1", ...).
  */
 class Validator {
   constructor(web3Provider, storageService) {
@@ -49,8 +54,12 @@ class Validator {
     // Support single or multiple validation rules
     const rules = Array.isArray(validation) ? validation : [validation];
 
+    const web3 = this.web3Provider.getWeb3();
+    const accounts = await this.web3Provider.getAccounts();
+    const resolve = createResolver({ web3, accounts, contracts: challenge.contracts });
+
     for (const rule of rules) {
-      const result = await this._evaluateRule(rule, challenge.contracts);
+      const result = await this._evaluateRule(rule, challenge.contracts, resolve);
       results.push(result);
     }
 
@@ -66,7 +75,7 @@ class Validator {
 
   // ─── Rule Evaluators ───────────────────────────────────────────────────────
 
-  async _evaluateRule(rule, contracts) {
+  async _evaluateRule(rule, contracts, resolve) {
     const targetContract = contracts.find((c) => c.name === rule.target);
     if (!targetContract) {
       return { passed: false, rule: rule.type, message: `Target "${rule.target}" not found` };
@@ -90,10 +99,13 @@ class Validator {
           return await this._checkDestroyed(targetContract.address);
 
         case 'custom_call':
-          return await this._checkCustomCall(targetContract, rule.method, rule.args, rule.expected);
+          return await this._checkCustomCall(targetContract, rule, resolve);
 
         case 'token_balance':
-          return await this._checkTokenBalance(targetContract, rule);
+          return await this._checkTokenBalance(targetContract, rule, resolve);
+
+        case 'call_reverts':
+          return await this._checkCallReverts(targetContract, rule, resolve);
 
         default:
           return { passed: false, rule: rule.type, message: `Unknown validation type: ${rule.type}` };
@@ -241,12 +253,19 @@ class Validator {
     };
   }
 
-  async _checkCustomCall(targetContract, method, args = [], expected) {
+  async _checkCustomCall(targetContract, rule, resolve) {
+    const { method } = rule;
     const web3 = this.web3Provider.getWeb3();
     const contract = new web3.eth.Contract(targetContract.abi, targetContract.address);
-    const accounts = await this.web3Provider.getAccounts();
+    if (typeof contract.methods[method] !== 'function') {
+      return { passed: false, rule: 'custom_call', message: `Method "${method}" not found` };
+    }
 
-    const result = await contract.methods[method](...(args || [])).call({ from: accounts[1] });
+    const args = resolve(rule.args || []);
+    const from = resolve(rule.from || '$player');
+    const expected = resolve(rule.expected);
+
+    const result = await contract.methods[method](...args).call({ from });
     const resultStr = String(result).toLowerCase();
     const expectedStr = String(expected).toLowerCase();
     const passed = resultStr === expectedStr;
@@ -260,17 +279,82 @@ class Validator {
     };
   }
 
-  async _checkTokenBalance(targetContract, rule) {
+  /**
+   * Passes when simulating the transaction reverts. Rule fields:
+   *   method, args, from (default "$player") and value, which is either an
+   *   ether amount ("1", "$ether:1") or { "view": "<fn>", "add": "<wei>" } to
+   *   use the result of a view function of the target plus an offset in wei.
+   * The sender's balance is overridden in the simulation, so only an EVM
+   * revert counts as success (never a lack of funds or an RPC failure).
+   */
+  async _checkCallReverts(targetContract, rule, resolve) {
+    const { method } = rule;
     const web3 = this.web3Provider.getWeb3();
     const contract = new web3.eth.Contract(targetContract.abi, targetContract.address);
-    const accounts = await this.web3Provider.getAccounts();
+    if (typeof contract.methods[method] !== 'function') {
+      return { passed: false, rule: 'call_reverts', message: `Method "${method}" not found` };
+    }
 
-    const targetAddress = rule.holder === 'player' ? accounts[1] : rule.holder;
+    const from = resolve(rule.from || '$player');
+    const data = contract.methods[method](...resolve(rule.args || [])).encodeABI();
+
+    let valueWei = 0n;
+    if (rule.value && typeof rule.value === 'object') {
+      const base = await contract.methods[rule.value.view]().call();
+      valueWei = BigInt(base) + BigInt(rule.value.add || 0);
+    } else if (rule.value !== undefined) {
+      const resolved = resolve(String(rule.value));
+      valueWei = String(rule.value).startsWith('$')
+        ? BigInt(resolved)
+        : BigInt(web3.utils.toWei(String(rule.value), 'ether'));
+    }
+
+    const tx = {
+      from,
+      to: targetContract.address,
+      data,
+      value: '0x' + valueWei.toString(16),
+    };
+    const overrides = { [from]: { balance: '0x' + (valueWei + 10n ** 24n).toString(16) } };
+
+    try {
+      await web3.requestManager.send({ method: 'eth_call', params: [tx, 'latest', overrides] });
+    } catch (err) {
+      if (this._isRevert(err)) {
+        return {
+          passed: true,
+          rule: 'call_reverts',
+          message: `${method}() reverts as expected`,
+        };
+      }
+      throw err;
+    }
+
+    return {
+      passed: false,
+      rule: 'call_reverts',
+      message: `${method}() still succeeds`,
+    };
+  }
+
+  _isRevert(err) {
+    const inner = (err && (err.innerError || err.error || err.data)) || {};
+    const code = err.code ?? inner.code;
+    const message = `${err.message || ''} ${inner.message || ''}`;
+    return code === 3 || /revert/i.test(message);
+  }
+
+  async _checkTokenBalance(targetContract, rule, resolve) {
+    const web3 = this.web3Provider.getWeb3();
+    const contract = new web3.eth.Contract(targetContract.abi, targetContract.address);
+
+    // "player" is kept for backwards compatibility with older metadata
+    const targetAddress = rule.holder === 'player' ? resolve('$player') : resolve(rule.holder);
     const balance = await contract.methods.balanceOf(targetAddress).call();
     const balanceBig = BigInt(balance.toString());
 
     const { operator, value } = this._parseCondition(rule.condition);
-    const expectedBig = BigInt(value);
+    const expectedBig = BigInt(resolve(value));
 
     let passed = false;
     switch (operator) {

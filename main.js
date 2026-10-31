@@ -447,15 +447,15 @@ function registerIpcHandlers() {
       // Skip account[0] (deployer/admin) — user gets accounts starting from index 1
       const accounts = allAccounts.slice(1);
       const deployed = await storageService.getDeployedContracts();
+      const userContracts = await storageService.getUserContracts();
 
-      // Build contract map for easy access
+      // Contract map: the player's own contracts first (latest deployment wins)
+      // and challenge contracts last, so a name clash never hides a challenge contract.
       const contracts = {};
-      if (Array.isArray(deployed)) {
-        for (const c of deployed) {
-          const abiData = await storageService.getContractAbi(c.contractName || c.fileName);
-          if (abiData) {
-            contracts[c.contractName || c.fileName] = new web3.eth.Contract(abiData.abi, abiData.contractAddress);
-          }
+      for (const c of [...(userContracts || []), ...(deployed || [])]) {
+        const name = c.contractName || c.title || c.fileName;
+        if (name && c.abi && c.address) {
+          contracts[name] = new web3.eth.Contract(c.abi, c.address);
         }
       }
 

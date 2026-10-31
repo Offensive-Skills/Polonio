@@ -148,8 +148,8 @@ class StorageService {
       return { abi: deployed.abi, contractAddress: deployed.address };
     }
 
-    // Search in user contracts
-    const user = data.userContracts.find((c) => {
+    // Search in user contracts (most recent deployment first)
+    const user = [...data.userContracts].reverse().find((c) => {
       const cName = (c.contractName || c.title || '').toLowerCase();
       return cName === lowerName;
     });

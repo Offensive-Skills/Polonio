@@ -50,14 +50,14 @@ class ContractService {
       throw new Error(`Compilation failed:\n${errorMsg}`);
     }
 
-    // Select contract
+    // Select contract: by explicit name, or the default one from the main file
     const contracts = compileResult.contracts;
     const contractNames = Object.keys(contracts);
     if (contractNames.length === 0) {
       throw new Error('No contracts found in compilation output');
     }
 
-    const targetName = contractName || contractNames[0];
+    const targetName = contractName || this._defaultContractName(filePath, contracts);
     const compiled = contracts[targetName];
     if (!compiled) {
       throw new Error(`Contract "${targetName}" not found. Available: ${contractNames.join(', ')}`);
@@ -98,14 +98,14 @@ class ContractService {
 
   /**
    * Deploy a challenge contract (from challenge directory).
+   * The contract is always selected by name, never by compilation order.
    */
-  async deployChallenge(challengeName, contractFileName, constructorArgs = [], postDeploy = [], value = '0') {
+  async deployChallenge(challengeName, contractFileName, contractName, constructorArgs = [], value = '0') {
     const challengeDir = this.storageService.getChallengeDir(challengeName);
     const filePath = path.join(challengeDir, contractFileName);
 
-    const result = await this.deploy({ filePath, constructorArgs, value });
+    const result = await this.deploy({ filePath, contractName, constructorArgs, value });
 
-    // Store deployment info
     await this.storageService.addDeployedContract({
       contractName: result.contractName,
       challengeName,
@@ -114,30 +114,44 @@ class ContractService {
       abi: result.abi,
     });
 
-    // Execute post-deploy actions
-    if (postDeploy && postDeploy.length > 0) {
-      await this._executePostDeploy(result.address, result.abi, postDeploy);
-    }
-
     return result;
   }
 
   /**
-   * Deploy a user contract (from uploaded file).
+   * Deploy a user contract (from the console editor).
+   * @param {object} data
+   * @param {string} data.source - Solidity source
+   * @param {string} data.contractName - Contract to deploy (optional, defaults to the last one declared)
+   * @param {any[]} data.constructorArgs - Constructor arguments
+   * @param {string} data.value - ETH to send with the deployment
+   * @param {number} data.accountIndex - Deployer account (defaults to the player, accounts[1])
    */
   async deployUserContract(data) {
-    const { title, source, fileName, constructorArgs = [] } = data;
+    const {
+      title,
+      source,
+      fileName,
+      contractName = null,
+      constructorArgs = [],
+      value = '0',
+      accountIndex = 1,
+    } = data;
 
-    // Write source to user contracts directory.
     // basename() prevents the renderer-supplied fileName from escaping the dir.
     const userDir = this.storageService.getUserContractsDir();
     const safeFileName = path.basename(String(fileName || 'Contract.sol'));
     const filePath = path.join(userDir, safeFileName);
     fs.writeFileSync(filePath, source, 'utf-8');
 
-    const result = await this.deploy({ filePath, constructorArgs });
+    const index = Number.isInteger(Number(accountIndex)) ? Number(accountIndex) : 1;
+    const result = await this.deploy({
+      filePath,
+      contractName: contractName || null,
+      constructorArgs,
+      value: String(value || '0'),
+      accountIndex: index,
+    });
 
-    // Store user contract info
     await this.storageService.addUserContract({
       title,
       contractName: result.contractName,
@@ -222,56 +236,27 @@ class ContractService {
   // ─── Private Methods ───────────────────────────────────────────────────────
 
   /**
-   * Execute post-deployment actions (fund, call methods, etc.)
+   * Default contract to deploy when no name is given: among the deployable
+   * contracts declared in the main file (imports excluded), the last one
+   * declared, which is where the entry contract usually lives.
    */
-  async _executePostDeploy(address, abi, actions) {
-    const web3 = this.web3Provider.getWeb3();
-    const accounts = await this.web3Provider.getAccounts();
-    const deployer = accounts[0];
+  _defaultContractName(filePath, contracts) {
+    const mainFile = path.basename(filePath);
+    const deployable = Object.entries(contracts)
+      .filter(([, c]) => c.sourceFile === mainFile && c.bytecode && c.bytecode.length > 0)
+      .map(([name]) => name);
 
-    for (const action of actions) {
-      try {
-        switch (action.action) {
-          case 'fund': {
-            const amount = action.amount || '0';
-            // Parse "100 ether" format
-            const parts = amount.split(' ');
-            const value = parts[0];
-            const unit = parts[1] || 'ether';
-            const weiAmount = web3.utils.toWei(value, unit);
-            await web3.eth.sendTransaction({
-              from: deployer,
-              to: address,
-              value: weiAmount,
-            });
-            logger.info(`Funded ${address} with ${amount}`);
-            break;
-          }
-          case 'call': {
-            const contract = new web3.eth.Contract(abi, address);
-            const args = action.args || [];
-            const method = contract.methods[action.method](...args);
-            const gas = await method.estimateGas({ from: deployer });
-            await method.send({ from: deployer, gas: Math.floor(Number(gas) * 1.3) });
-            logger.info(`Called ${action.method} on ${address}`);
-            break;
-          }
-          case 'approve': {
-            // For ERC20 approvals
-            const contract = new web3.eth.Contract(abi, address);
-            const method = contract.methods.approve(action.spender, action.amount);
-            const gas = await method.estimateGas({ from: deployer });
-            await method.send({ from: deployer, gas: Math.floor(Number(gas) * 1.3) });
-            logger.info(`Approved ${action.amount} for ${action.spender} on ${address}`);
-            break;
-          }
-          default:
-            logger.warn(`Unknown post-deploy action: ${action.action}`);
-        }
-      } catch (err) {
-        logger.error(`Post-deploy action failed: ${action.action}`, err);
-      }
+    if (deployable.length === 0) {
+      throw new Error('No deployable contract found (only interfaces, libraries or abstract contracts)');
     }
+    if (deployable.length === 1) return deployable[0];
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const position = (name) => {
+      const m = new RegExp(`\\bcontract\\s+${name}\\b`).exec(source);
+      return m ? m.index : -1;
+    };
+    return deployable.sort((a, b) => position(a) - position(b))[deployable.length - 1];
   }
 
   /**

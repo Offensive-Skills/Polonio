@@ -1,6 +1,6 @@
 {
     "name": "polonio",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Plataforma de entrenamiento en seguridad Web3 — Despliega smart contracts en blockchain local y practica ataques en entornos seguros",
     "main": "main.js",
     "scripts": {

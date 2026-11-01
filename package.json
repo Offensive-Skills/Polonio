@@ -32,7 +32,11 @@
     },
     "license": "SEE LICENSE IN LICENSE.md",
     "dependencies": {
+        "@highlightjs/cdn-assets": "11.11.1",
         "@openzeppelin/contracts": "^5.0.0",
+        "dompurify": "3.4.17",
+        "highlightjs-solidity": "2.0.6",
+        "marked": "18.1.1",
         "solc": "^0.8.28",
         "web3": "^4.16.0"
     },
@@ -70,7 +74,9 @@
             "utils/**",
             "views/**",
             "assets/**",
-            "package.json"
+            "package.json",
+            "!node_modules/@highlightjs/cdn-assets/{es,languages,styles}/**",
+            "!node_modules/@highlightjs/cdn-assets/highlight.js"
         ],
         "directories": {
             "buildResources": "build"

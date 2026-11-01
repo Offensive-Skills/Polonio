@@ -92,6 +92,7 @@ class ContractService {
       contractName: targetName,
       address: deployed.options.address,
       abi: compiled.abi,
+      deployer,
       transactionHash: deployed.transactionHash || null,
     };
   }
@@ -152,85 +153,127 @@ class ContractService {
       accountIndex: index,
     });
 
+    // The source is snapshotted with the deployment: the editor (and the file
+    // on disk) are overwritten by later deployments, but the player must be
+    // able to review exactly what is running at this address.
     await this.storageService.addUserContract({
       title,
       contractName: result.contractName,
       fileName: safeFileName,
       address: result.address,
       abi: result.abi,
+      source,
+      deployer: result.deployer,
+      transactionHash: result.transactionHash,
     });
 
     return result;
   }
 
   /**
-   * Interact with a deployed contract.
-   * Automatically detects read (call) vs write (send) methods.
-   * 
+   * Interact with a registered contract.
+   * The ABI is taken from the local registry and the function is selected by
+   * its canonical signature, so overloaded functions are supported.
+   * Read-only functions are executed with eth_call, the rest as transactions.
+   *
    * @param {object} data
    * @param {string} data.address - Contract address
-   * @param {any[]} data.abi - Contract ABI
-   * @param {string} data.methodName - Method to call
-   * @param {any[]} data.args - Method arguments
+   * @param {string} data.signature - Canonical signature, e.g. "transfer(address,uint256)"
+   * @param {any[]} data.args - One value per function input (strings are coerced by type)
    * @param {number} data.accountIndex - Account index to send from
-   * @param {string} data.value - ETH value to send (optional)
+   * @param {string} data.value - ETH value to send (payable functions only)
    */
   async interact(data) {
-    const { address, abi, methodName, args = [], accountIndex = 0, value = '0' } = data;
+    const { address, signature, args = [], accountIndex = 1, value = '0' } = data || {};
 
-    const web3 = this.web3Provider.getWeb3();
-    const accounts = await this.web3Provider.getAccounts();
-    const caller = accounts[accountIndex] || accounts[0];
-
-    const contract = new web3.eth.Contract(abi, address);
-
-    // Find the method in ABI
-    const methodAbi = abi.find(
-      (item) => item.type === 'function' && item.name === methodName
-    );
-
-    if (!methodAbi) {
-      throw new Error(`Method "${methodName}" not found in contract ABI`);
+    const record = await this.storageService.getContractByAddress(address);
+    if (!record || !Array.isArray(record.abi)) {
+      throw new Error(`No hay ningún contrato registrado en ${address}`);
     }
 
-    const method = contract.methods[methodName](...args);
+    const fragment = record.abi.find(
+      (item) => item.type === 'function' && functionSignature(item) === signature
+    );
+    if (!fragment) {
+      throw new Error(`La función "${signature}" no existe en el ABI de ${record.contractName || address}`);
+    }
 
-    // Determine if it's a read or write operation
-    const isReadOnly = methodAbi.stateMutability === 'view' || methodAbi.stateMutability === 'pure';
+    const inputs = fragment.inputs || [];
+    if (!Array.isArray(args) || args.length !== inputs.length) {
+      throw new Error(`${signature} espera ${inputs.length} argumento(s), recibidos ${Array.isArray(args) ? args.length : 0}`);
+    }
+    const coercedArgs = inputs.map((input, i) => coerceArg(input, args[i], i));
 
+    const web3 = this.web3Provider.getWeb3();
+    if (!web3) throw new Error('Blockchain no conectada');
+    const caller = await this._account(accountIndex);
+    const contract = new web3.eth.Contract(record.abi, record.address);
+
+    // web3 indexes methods by canonical signature as well as by bare name.
+    const methodFn = contract.methods[signature] || contract.methods[fragment.name];
+    const method = methodFn(...coercedArgs);
+
+    const isReadOnly = fragment.stateMutability === 'view' || fragment.stateMutability === 'pure';
     if (isReadOnly) {
       const result = await method.call({ from: caller });
       return {
         success: true,
         type: 'call',
-        result: this._serializeResult(result),
-      };
-    } else {
-      const valueWei = web3.utils.toWei(value, 'ether');
-      const gasEstimate = await method.estimateGas({ from: caller, value: valueWei });
-      const gasLimit = Math.floor(Number(gasEstimate) * 1.3);
-
-      const receipt = await method.send({
-        from: caller,
-        gas: gasLimit,
-        value: valueWei,
-      });
-
-      return {
-        success: true,
-        type: 'send',
-        result: {
-          transactionHash: receipt.transactionHash,
-          // web3 v4 returns BigInt for numeric fields — normalize for IPC/JSON.
-          blockNumber: Number(receipt.blockNumber),
-          status: receipt.status ? Number(receipt.status) : 0,
-          from: receipt.from,
-          to: receipt.to,
-          gasUsed: receipt.gasUsed != null ? receipt.gasUsed.toString() : null,
-          events: this._serializeEvents(receipt.events),
-        },
+        signature,
+        outputs: formatOutputs(fragment.outputs || [], result),
       };
     }
+
+    const isPayable = fragment.stateMutability === 'payable' || fragment.payable === true;
+    const valueWei = web3.utils.toWei(String(value || '0'), 'ether');
+    if (!isPayable && BigInt(valueWei) !== 0n) {
+      throw new Error(`${signature} no es payable: no se puede enviar ETH`);
+    }
+
+    const gasEstimate = await method.estimateGas({ from: caller, value: valueWei });
+    const receipt = await method.send({
+      from: caller,
+      gas: Math.floor(Number(gasEstimate) * 1.3),
+      value: valueWei,
+    });
+
+    return {
+      success: true,
+      type: 'send',
+      signature,
+      result: this._serializeReceipt(receipt),
+    };
+  }
+
+  /**
+   * Send a raw transaction (arbitrary calldata and/or ETH) to any address.
+   * Reaches fallback()/receive() and functions that are not in the ABI.
+   *
+   * @param {object} data
+   * @param {string} data.to - Destination address
+   * @param {string} data.data - Hex calldata ("0x" or empty for a plain transfer)
+   * @param {string} data.value - ETH to send
+   * @param {number} data.accountIndex - Account index to send from
+   */
+  async sendRaw(data) {
+    const { to, data: calldata = '', value = '0', accountIndex = 1 } = data || {};
+    const web3 = this.web3Provider.getWeb3();
+    if (!web3) throw new Error('Blockchain no conectada');
+
+    if (!web3.utils.isAddress(String(to || ''))) {
+      throw new Error(`Dirección de destino inválida: "${to}"`);
+    }
+    const hexData = String(calldata || '').trim() || '0x';
+    if (!/^0x([0-9a-fA-F]{2})*$/.test(hexData)) {
+      throw new Error('Calldata inválido: debe ser hexadecimal con prefijo 0x y número par de dígitos');
+    }
+
+    const from = await this._account(accountIndex);
+    const tx = { from, to, data: hexData, value: web3.utils.toWei(String(value || '0'), 'ether') };
+    const gasEstimate = await web3.eth.estimateGas(tx);
+    const receipt = await web3.eth.sendTransaction({ ...tx, gas: Math.floor(Number(gasEstimate) * 1.3) });
+
+    return { success: true, type: 'send', result: this._serializeReceipt(receipt) };
   }
 
   // ─── Private Methods ───────────────────────────────────────────────────────
@@ -259,22 +302,28 @@ class ContractService {
     return deployable.sort((a, b) => position(a) - position(b))[deployable.length - 1];
   }
 
-  /**
-   * Serialize BigInt and complex results for IPC transport.
-   */
-  _serializeResult(result) {
-    if (result === null || result === undefined) return null;
-    if (typeof result === 'bigint') return result.toString();
-    if (typeof result !== 'object') return result;
-    if (Array.isArray(result)) return result.map((r) => this._serializeResult(r));
+  async _account(accountIndex) {
+    const accounts = await this.web3Provider.getAccounts();
+    const index = Number(accountIndex);
+    const account = Number.isInteger(index) ? accounts[index] : undefined;
+    if (!account) throw new Error(`La cuenta ${accountIndex} no existe`);
+    return account;
+  }
 
-    const serialized = {};
-    for (const [key, value] of Object.entries(result)) {
-      // Skip numeric keys from tuples
-      if (!isNaN(key)) continue;
-      serialized[key] = this._serializeResult(value);
-    }
-    return serialized;
+  /**
+   * Receipt fields relevant to the player, IPC/JSON safe
+   * (web3 v4 returns BigInt for numeric fields).
+   */
+  _serializeReceipt(receipt) {
+    return {
+      transactionHash: receipt.transactionHash,
+      blockNumber: Number(receipt.blockNumber),
+      status: receipt.status != null ? Number(receipt.status) : 0,
+      from: receipt.from,
+      to: receipt.to,
+      gasUsed: receipt.gasUsed != null ? receipt.gasUsed.toString() : null,
+      events: this._serializeEvents(receipt.events),
+    };
   }
 
   _serializeEvents(events) {
@@ -283,7 +332,7 @@ class ContractService {
     for (const [name, event] of Object.entries(events)) {
       if (event && event.returnValues) {
         serialized[name] = {
-          returnValues: this._serializeResult(event.returnValues),
+          returnValues: serializeDecoded(event.returnValues),
           event: event.event,
           logIndex: event.logIndex != null ? Number(event.logIndex) : null,
         };
@@ -293,4 +342,97 @@ class ContractService {
   }
 }
 
-module.exports = { ContractService };
+// ─── ABI helpers ─────────────────────────────────────────────────────────────
+
+/** Canonical ABI type of a parameter (tuples expanded: "(uint256,address)[]"). */
+function canonicalType(param) {
+  const type = String(param.type || '');
+  if (type.startsWith('tuple')) {
+    const inner = (param.components || []).map(canonicalType).join(',');
+    return `(${inner})${type.slice('tuple'.length)}`;
+  }
+  return type;
+}
+
+/** Canonical function signature, e.g. "transfer(address,uint256)". */
+function functionSignature(fragment) {
+  return `${fragment.name}(${(fragment.inputs || []).map(canonicalType).join(',')})`;
+}
+
+/**
+ * Convert a value typed by the player into what web3 expects for `param`.
+ * Arrays and tuples are given as JSON, bools as true/false; numbers, addresses,
+ * bytes and strings are passed through and validated by web3's ABI encoder.
+ */
+function coerceArg(param, raw, index) {
+  const type = String(param.type || '');
+  const label = `Argumento ${index + 1} (${canonicalType(param)}${param.name ? ' ' + param.name : ''})`;
+
+  if (type.endsWith(']') || type.startsWith('tuple')) {
+    if (typeof raw !== 'string') return raw;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Error(`${label}: debe ser JSON válido, p. ej. ${type.startsWith('tuple') ? '["0x...", 1]' : '[1, 2, 3]'}`);
+    }
+  }
+
+  if (type === 'bool') {
+    if (typeof raw === 'boolean') return raw;
+    const text = String(raw).trim().toLowerCase();
+    if (text === 'true' || text === '1') return true;
+    if (text === 'false' || text === '0') return false;
+    throw new Error(`${label}: debe ser true o false`);
+  }
+
+  const text = typeof raw === 'string' ? raw.trim() : raw;
+  if (text === '' && type !== 'string') {
+    throw new Error(`${label}: valor requerido`);
+  }
+  return type === 'string' ? raw : text;
+}
+
+/**
+ * Pair each declared output with its decoded value.
+ * web3 returns a single output as a bare value and several outputs as an
+ * object with positional keys (unnamed outputs only exist positionally).
+ */
+function formatOutputs(outputs, result) {
+  if (outputs.length === 0) return [];
+  if (outputs.length === 1) {
+    return [{ name: outputs[0].name || '', type: canonicalType(outputs[0]), value: serializeDecoded(result) }];
+  }
+  return outputs.map((output, i) => ({
+    name: output.name || '',
+    type: canonicalType(output),
+    value: serializeDecoded(result ? result[i] : undefined),
+  }));
+}
+
+/**
+ * Make a web3-decoded value JSON safe: BigInt to decimal string, and decoded
+ * structs/tuples (objects with positional keys + __length__) to their named
+ * fields, or to a plain array when the fields are unnamed.
+ */
+function serializeDecoded(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'bigint') return value.toString();
+  if (Array.isArray(value)) return value.map(serializeDecoded);
+  if (typeof value !== 'object') return value;
+
+  const keys = Object.keys(value).filter((k) => k !== '__length__');
+  const named = keys.filter((k) => isNaN(Number(k)));
+  if (named.length > 0) {
+    const out = {};
+    for (const k of named) out[k] = serializeDecoded(value[k]);
+    return out;
+  }
+  if ('__length__' in value) {
+    return Array.from({ length: Number(value.__length__) }, (_, i) => serializeDecoded(value[i]));
+  }
+  const out = {};
+  for (const k of keys) out[k] = serializeDecoded(value[k]);
+  return out;
+}
+
+module.exports = { ContractService, functionSignature, canonicalType };

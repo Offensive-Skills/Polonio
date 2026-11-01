@@ -43,11 +43,12 @@ contextBridge.exposeInMainWorld('polonio', {
   // ─── Contracts ────────────────────────────────────────────────
   contracts: {
     interact: (data) => ipcRenderer.invoke('contracts:interact', data),
+    sendRaw: (data) => ipcRenderer.invoke('contracts:send-raw', data),
     getCode: (challengeName, scName) => ipcRenderer.invoke('contracts:code', challengeName, scName),
-    getAbi: (contractName) => ipcRenderer.invoke('contracts:abi', contractName),
+    getRegistry: () => ipcRenderer.invoke('contracts:registry'),
+    getAbi: (address) => ipcRenderer.invoke('contracts:abi', address),
+    getSource: (address) => ipcRenderer.invoke('contracts:source', address),
     deployUser: (data) => ipcRenderer.invoke('contracts:deploy-user', data),
-    getUserContracts: () => ipcRenderer.invoke('contracts:user-list'),
-    getDeployed: () => ipcRenderer.invoke('contracts:deployed-list'),
   },
 
   // ─── Storage Inspector ────────────────────────────────────────

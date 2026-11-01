@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="../assets/css/components.css">
   <link rel="stylesheet" href="../assets/css/layout.css">
   <link rel="stylesheet" href="../assets/css/views.css">
+  <link rel="stylesheet" href="../assets/css/code.css">
   <link rel="stylesheet" href="../assets/css/background.css">
 </head>
 <body>
@@ -122,18 +123,30 @@
               <p class="text-muted">Inicia el nodo para ver las cuentas.</p>
             </div>
           </div>
+          <div style="margin-top:var(--space-6);">
+            <h3 style="margin-bottom:var(--space-3);">Contratos desplegados</h3>
+            <div id="dashboard-contracts" class="registry-list">
+              <p class="text-muted">No hay contratos desplegados.</p>
+            </div>
+          </div>
         </div>
 
         <!-- CHALLENGES LIST -->
         <div id="view-challenges" class="view-container">
           <div class="challenges-header">
-            <div class="challenges-filters">
-              <button class="filter-btn active" data-level="all">Todos</button>
-              <button class="filter-btn" data-level="facil">Basico</button>
-              <button class="filter-btn" data-level="medio">Intermedio</button>
-              <button class="filter-btn" data-level="dificil">Avanzado</button>
-              <button class="filter-btn" data-level="active">Desplegados</button>
+            <div class="search-box">
+              <svg class="search-box-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg>
+              <input type="text" class="input search-box-input" id="challenge-search" placeholder="Buscar reto por nombre..." autocomplete="off" spellcheck="false" aria-label="Buscar reto por nombre">
+              <button type="button" class="search-box-clear" id="challenge-search-clear" title="Limpiar busqueda (Esc)" aria-label="Limpiar busqueda" hidden>&times;</button>
             </div>
+            <div class="challenges-filters" role="group" aria-label="Filtrar retos">
+              <button class="filter-btn active" data-level="all" aria-pressed="true">Todos</button>
+              <button class="filter-btn" data-level="facil" aria-pressed="false">Basico</button>
+              <button class="filter-btn" data-level="medio" aria-pressed="false">Intermedio</button>
+              <button class="filter-btn" data-level="dificil" aria-pressed="false">Avanzado</button>
+              <button class="filter-btn" data-level="active" aria-pressed="false">Desplegados</button>
+            </div>
+            <span class="challenges-count" id="challenges-count" aria-live="polite"></span>
           </div>
           <div class="challenges-grid" id="challenges-grid"></div>
         </div>
@@ -163,9 +176,7 @@
                   <span class="code-panel-title" id="detail-code-title">Selecciona un contrato</span>
                   <button class="btn btn-ghost btn-sm" id="btn-copy-code">Copiar</button>
                 </div>
-                <div class="code-panel-content">
-                  <pre id="detail-code-display"><code>// Selecciona un contrato del listado para ver su codigo fuente.</code></pre>
-                </div>
+                <div class="code-panel-content code-panel-content-flush" id="detail-code-display"></div>
               </div>
             </div>
           </div>
@@ -188,7 +199,9 @@
                   </div>
                 </div>
                 <div class="code-panel-content" style="padding:0; position:relative;">
-                  <textarea id="script-editor" class="script-textarea" spellcheck="false" placeholder="// Variables disponibles: web3, accounts, contracts, getContract()
+                  <div class="editor" id="editor-wrapper">
+                  <div class="editor-gutter" id="editor-gutter" aria-hidden="true"></div>
+                  <textarea id="script-editor" class="script-textarea" spellcheck="false" wrap="off" autocomplete="off" autocapitalize="off" placeholder=""// Variables disponibles: web3, accounts, contracts, getContract()
 // accounts = tus cuentas (sin la admin)
 // contracts = { NombreContrato: web3.eth.Contract }
 //
@@ -205,18 +218,33 @@ await web3.eth.sendTransaction({
 
 // Ejemplo — ABI manual (usa getContract para auto-fix):
 const c = getContract([{...abi...}], '0xDIR');"></textarea>
+                  </div>
                   <div id="source-viewer" class="source-viewer" style="display:none;">
                     <div class="source-viewer-header">
-                      <select class="select select-sm" id="source-contract-select">
-                        <option value="">-- Contrato --</option>
+                      <select class="select select-sm" id="source-contract-select" aria-label="Contrato desplegado">
+                        <option value="">-- Contrato desplegado --</option>
                       </select>
+                      <div class="source-viewer-meta" id="source-viewer-meta" hidden>
+                        <span class="address-chip" id="source-viewer-address" role="button" tabindex="0" title="Copiar direccion"></span>
+                        <span class="source-viewer-origin" id="source-viewer-origin"></span>
+                        <span class="source-viewer-actions">
+                          <button class="btn btn-ghost btn-sm" id="btn-source-copy">Copiar codigo</button>
+                          <button class="btn btn-secondary btn-sm" id="btn-source-to-editor" hidden title="Sustituye el contenido del editor (Ctrl+Z para deshacer)">Abrir en editor</button>
+                        </span>
+                      </div>
                     </div>
-                    <pre class="source-viewer-code" id="source-code-display"><code>// Selecciona un contrato desplegado para ver su codigo</code></pre>
+                    <div class="source-viewer-code" id="source-code-display"></div>
                   </div>
                 </div>
               </div>
             </div>
             <div class="console-tools-section">
+              <div class="console-interact-panel">
+                <h4>Contratos desplegados</h4>
+                <div id="console-registry" class="registry-list registry-list-compact">
+                  <p class="text-muted">No hay contratos desplegados.</p>
+                </div>
+              </div>
               <div class="console-interact-panel">
                 <h4>Despliegue Solidity</h4>
                 <div class="form-group">
@@ -240,29 +268,31 @@ const c = getContract([{...abi...}], '0xDIR');"></textarea>
               </div>
               <div class="console-interact-panel">
                 <h4>Interaccion rapida</h4>
+                <form id="console-interact-form" autocomplete="off">
                 <div class="form-group">
-                  <label class="form-label">Contrato</label>
+                  <label class="form-label" for="console-contract-select">Contrato</label>
                   <select class="select" id="console-contract-select">
                     <option value="">-- Seleccionar --</option>
                   </select>
+                  <span class="address-chip" id="console-contract-address" role="button" tabindex="0" title="Copiar direccion" hidden></span>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Cuenta</label>
+                  <label class="form-label" for="console-account-select">Cuenta</label>
                   <select class="select" id="console-account-select"></select>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Metodo</label>
-                  <input class="input input-code" id="console-method" placeholder="functionName">
+                  <label class="form-label" for="console-method-select">Funcion</label>
+                  <select class="select select-code" id="console-method-select" disabled>
+                    <option value="">-- Selecciona un contrato --</option>
+                  </select>
                 </div>
-                <div class="form-group">
-                  <label class="form-label">Args (coma-sep o JSON)</label>
-                  <input class="input input-code" id="console-args" placeholder="arg1, arg2">
+                <div id="console-method-params"></div>
+                <div class="form-group" id="console-value-group">
+                  <label class="form-label" for="console-value">Value (ETH)</label>
+                  <input class="input input-code" id="console-value" value="0" inputmode="decimal">
                 </div>
-                <div class="form-group">
-                  <label class="form-label">Value (ETH)</label>
-                  <input class="input input-code" id="console-value" value="0">
-                </div>
-                <button class="btn btn-primary" id="btn-console-invoke" style="width:100%;">Invocar</button>
+                <button type="submit" class="btn btn-primary" id="btn-console-invoke" style="width:100%;" disabled>Invocar</button>
+                </form>
               </div>
               <div class="console-output-panel">
                 <h4>Output</h4>
@@ -279,7 +309,7 @@ const c = getContract([{...abi...}], '0xDIR');"></textarea>
               <h4>Storage Reader</h4>
               <div class="form-group">
                 <label class="form-label">Direccion</label>
-                <input class="input input-code" id="inspector-address" placeholder="0x...">
+                <input class="input input-code" id="inspector-address" placeholder="0x..." list="known-addresses" autocomplete="off">
               </div>
               <div class="form-group">
                 <label class="form-label">Slot</label>
@@ -292,7 +322,7 @@ const c = getContract([{...abi...}], '0xDIR');"></textarea>
               <h4>Balance / Code</h4>
               <div class="form-group">
                 <label class="form-label">Direccion</label>
-                <input class="input input-code" id="inspector-info-address" placeholder="0x...">
+                <input class="input input-code" id="inspector-info-address" placeholder="0x..." list="known-addresses" autocomplete="off">
               </div>
               <button class="btn btn-primary" id="btn-inspect-address">Consultar</button>
               <div id="address-info-result" class="storage-result" style="display:none;"></div>
@@ -354,16 +384,24 @@ const c = getContract([{...abi...}], '0xDIR');"></textarea>
   <!-- WRITEUP MODAL -->
   <div class="writeup-modal" id="writeup-modal" style="display:none;">
     <div class="writeup-modal-backdrop" id="writeup-modal-backdrop"></div>
-    <div class="writeup-modal-content">
+    <div class="writeup-modal-content" role="dialog" aria-modal="true" aria-labelledby="writeup-modal-title">
       <div class="writeup-modal-header">
         <h3 id="writeup-modal-title">Writeup</h3>
-        <button class="btn btn-ghost btn-sm" id="writeup-modal-close">&times;</button>
+        <button class="btn btn-ghost btn-sm" id="writeup-modal-close" title="Cerrar (Esc)" aria-label="Cerrar">&times;</button>
       </div>
-      <div class="writeup-modal-body" id="writeup-modal-body"></div>
+      <div class="writeup-modal-body markdown-body" id="writeup-modal-body"></div>
     </div>
   </div>
 
+  <!-- Suggestions (accounts + deployed contracts) for every address input -->
+  <datalist id="known-addresses"></datalist>
+
   <div class="toast-container" id="toast-container"></div>
+  <script src="../node_modules/marked/lib/marked.umd.js"></script>
+  <script src="../node_modules/dompurify/dist/purify.min.js"></script>
+  <script src="../node_modules/@highlightjs/cdn-assets/highlight.min.js"></script>
+  <script src="../node_modules/highlightjs-solidity/dist/solidity.min.js"></script>
+  <script src="render.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -60,9 +60,12 @@ polonio
 
 1. Inicia sesión con tu usuario y token.
 2. Pulsa **Iniciar Nodo** en la barra superior para levantar la cadena local.
-3. Ve a **Retos**, selecciona uno y pulsa **Desplegar**.
+3. Ve a **Retos**, busca uno por nombre o filtra por nivel, selecciónalo y pulsa **Desplegar**.
 4. Lee el código fuente del contrato en el panel derecho.
 5. Usa la **Consola** para escribir y desplegar tu *exploit* (JavaScript con `web3` o Solidity).
+   - El panel **Contratos desplegados** lista todos los contratos (del reto y tuyos): haz click en una dirección para copiarla.
+   - **Interacción rápida** genera un campo por parámetro a partir del ABI y permite enviar transacciones raw (calldata/ETH) para alcanzar `fallback`/`receive`.
+   - La pestaña **Código Fuente** muestra el código exacto de cada despliegue, incluidos los tuyos, y permite reabrirlo en el editor para corregirlo.
 6. Pulsa **Verificar solución** cuando creas haberlo resuelto.
 
 ---
@@ -104,13 +107,14 @@ Polonio/
 ├── main.js                 # Proceso principal de Electron + handlers IPC
 ├── preload.js              # contextBridge (window.polonio.*)
 ├── views/app.{html,js}     # Interfaz (SPA)
+├── views/render.js         # Markdown (marked + DOMPurify) y resaltado Solidity (highlight.js)
 ├── assets/css/             # Estilos
 ├── blockchain/             # web3Provider, contractService, storageService, inspector…
 ├── forge/anvilService.js   # Ciclo de vida del nodo Anvil (nativo o Docker)
 ├── challenges/             # challengeEngine, validator
 ├── compiler/               # Envoltorio de solc + resolución de imports
 ├── controllers/            # authController
-└── utils/                  # logger
+└── utils/                  # logger, descripción de errores (reverts)
 ```
 
 

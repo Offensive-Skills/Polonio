@@ -6,7 +6,7 @@ const path = require('path');
 // ─── Services ────────────────────────────────────────────────────────────────
 const { AnvilService } = require('./forge/anvilService');
 const { AuthController } = require('./controllers/authController');
-const { ContractService } = require('./blockchain/contractService');
+const { ContractService, functionSignature } = require('./blockchain/contractService');
 const { ChallengeEngine } = require('./challenges/challengeEngine');
 const { Validator } = require('./challenges/validator');
 const { StorageService } = require('./blockchain/storageService');
@@ -17,6 +17,7 @@ const { Inspector } = require('./blockchain/inspector');
 const { CompileService } = require('./compiler/compileService');
 const { Web3Provider } = require('./blockchain/web3Provider');
 const { Logger } = require('./utils/logger');
+const { describeError } = require('./utils/errors');
 
 const logger = new Logger('main');
 
@@ -61,6 +62,19 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 
+  // The renderer is a single local page: links (e.g. inside writeups) open in
+  // the system browser and the window itself can never navigate elsewhere.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openExternalSafe(url);
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== mainWindow.webContents.getURL()) {
+      event.preventDefault();
+      openExternalSafe(url);
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -68,6 +82,12 @@ function createWindow() {
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     logger.error('Render process gone', details);
   });
+}
+
+function openExternalSafe(url) {
+  if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
+    shell.openExternal(url).catch((err) => logger.error('openExternal', err));
+  }
 }
 
 // ─── Initialize Services ─────────────────────────────────────────────────────
@@ -231,7 +251,7 @@ function registerIpcHandlers() {
       return await challengeEngine.activateChallenge(challengeName, token);
     } catch (err) {
       logger.error('challenges:activate', err);
-      return { success: false, error: err.message };
+      return { success: false, error: describeError(err) };
     }
   });
 
@@ -300,10 +320,22 @@ function registerIpcHandlers() {
       return result;
     } catch (err) {
       logger.error('contracts:interact', err);
-      return { success: false, error: err.message };
+      return { success: false, error: describeError(err) };
     }
   });
 
+  ipcMain.handle('contracts:send-raw', async (_event, data) => {
+    try {
+      const result = await contractService.sendRaw(data);
+      transactionLogger.log({ ...data, signature: 'raw', address: data && data.to }, result);
+      return result;
+    } catch (err) {
+      logger.error('contracts:send-raw', err);
+      return { success: false, error: describeError(err) };
+    }
+  });
+
+  // Source of a challenge contract straight from the API (challenge detail view).
   ipcMain.handle('contracts:code', async (_event, challengeName, scName) => {
     try {
       const token = authController.getToken();
@@ -314,12 +346,76 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('contracts:abi', async (_event, contractName) => {
+  // Every contract deployed in this chain session (challenge + player's own).
+  ipcMain.handle('contracts:registry', async () => {
     try {
-      return await storageService.getContractAbi(contractName);
+      return await storageService.getContractRegistry();
+    } catch (err) {
+      logger.error('contracts:registry', err);
+      return [];
+    }
+  });
+
+  ipcMain.handle('contracts:abi', async (_event, address) => {
+    try {
+      const record = await storageService.getContractByAddress(address);
+      if (!record) return null;
+      const abi = Array.isArray(record.abi) ? record.abi : [];
+      return {
+        name: record.contractName || record.title || '',
+        address: record.address,
+        abi,
+        // Callable functions with their canonical signature (the key used by
+        // contracts:interact), so the renderer never has to rebuild it.
+        functions: abi
+          .filter((item) => item.type === 'function')
+          .map((item) => ({
+            signature: functionSignature(item),
+            name: item.name,
+            inputs: item.inputs || [],
+            outputs: item.outputs || [],
+            stateMutability: item.stateMutability || (item.constant ? 'view' : (item.payable ? 'payable' : 'nonpayable')),
+          })),
+        hasFallback: abi.some((item) => item.type === 'fallback'),
+        hasReceive: abi.some((item) => item.type === 'receive'),
+      };
     } catch (err) {
       logger.error('contracts:abi', err);
       return null;
+    }
+  });
+
+  // Exact source running at `address`: the snapshot taken at deploy time for
+  // the player's contracts, the file compiled at activation for challenges.
+  ipcMain.handle('contracts:source', async (_event, address) => {
+    try {
+      const record = await storageService.getContractByAddress(address);
+      if (!record) return { success: false, error: 'Contrato no registrado' };
+
+      const name = record.contractName || record.title || '';
+      if (record.kind === 'user') {
+        if (!record.source) return { success: false, error: 'Este despliegue no tiene código fuente asociado' };
+        return { success: true, kind: 'user', name, address: record.address, fileName: record.fileName, source: record.source };
+      }
+
+      let source = challengeEngine.getLocalContractSource(record.challengeName, record.fileName);
+      if (source === null) {
+        const token = authController.getToken();
+        const res = await challengeEngine.getContractCode(record.challengeName, name, token);
+        source = (res && res.contract) || '';
+      }
+      return {
+        success: true,
+        kind: 'challenge',
+        name,
+        address: record.address,
+        challengeName: record.challengeName,
+        fileName: record.fileName,
+        source,
+      };
+    } catch (err) {
+      logger.error('contracts:source', err);
+      return { success: false, error: err.message };
     }
   });
 
@@ -330,25 +426,7 @@ function registerIpcHandlers() {
       return result;
     } catch (err) {
       logger.error('contracts:deploy-user', err);
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('contracts:user-list', async () => {
-    try {
-      return await storageService.getUserContracts();
-    } catch (err) {
-      logger.error('contracts:user-list', err);
-      return [];
-    }
-  });
-
-  ipcMain.handle('contracts:deployed-list', async () => {
-    try {
-      return await storageService.getDeployedContracts();
-    } catch (err) {
-      logger.error('contracts:deployed-list', err);
-      return [];
+      return { success: false, error: describeError(err) };
     }
   });
 
@@ -485,7 +563,7 @@ function registerIpcHandlers() {
 
       return { success: true, output: logs.join('\n'), result: result !== undefined ? String(result) : null };
     } catch (err) {
-      return { success: false, error: err.message || String(err) };
+      return { success: false, error: describeError(err) };
     }
   });
 
@@ -501,10 +579,7 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('system:open-external', async (_event, url) => {
-    // Only allow http/https URLs
-    if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
-      await shell.openExternal(url);
-    }
+    openExternalSafe(url);
     return { success: true };
   });
 

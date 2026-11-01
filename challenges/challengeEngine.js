@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const { Logger } = require('../utils/logger');
 const { createResolver } = require('./references');
+const { describeError } = require('../utils/errors');
 
 const logger = new Logger('challenge-engine');
 
@@ -77,6 +78,19 @@ class ChallengeEngine {
    */
   async getWriteup(challengeName, token) {
     return this._apiPost('/getWriteup', { token, challenge_name: challengeName });
+  }
+
+  /**
+   * Source of a challenge contract as downloaded (and compiled) at activation,
+   * or null when there is no local copy.
+   */
+  getLocalContractSource(challengeName, fileName) {
+    if (!challengeName || !fileName) return null;
+    const filePath = path.join(
+      this.storageService.getChallengeDir(challengeName),
+      path.basename(String(fileName))
+    );
+    return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : null;
   }
 
   /**
@@ -167,7 +181,7 @@ class ChallengeEngine {
 
           logger.info(`Deployed ${sc.name} at ${result.address}`);
         } catch (deployErr) {
-          throw new Error(`Failed to deploy "${sc.name}": ${deployErr.message}`);
+          throw new Error(`Failed to deploy "${sc.name}": ${describeError(deployErr)}`);
         }
       }
 
@@ -357,7 +371,7 @@ class ChallengeEngine {
             throw new Error(`unknown action "${action.action}"`);
         }
       } catch (err) {
-        throw new Error(`Setup failed at ${label}: ${err.message}`);
+        throw new Error(`Setup failed at ${label}: ${describeError(err)}`);
       }
     }
   }

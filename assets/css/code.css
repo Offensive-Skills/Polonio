@@ -1,0 +1,505 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   POLONIO — Source code, syntax highlighting, Markdown and contract registry
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --code-font-size: 0.8rem;
+  --code-line-height: 1.65;
+  --code-tab-size: 4;
+
+  /* Syntax palette (tuned for --bg-code) */
+  --syn-text: #d6d9e6;
+  --syn-comment: #6b7391;
+  --syn-doctag: #9aa2bf;
+  --syn-keyword: #c792ea;
+  --syn-type: #4fd6ff;
+  --syn-builtin: #ff8ac9;
+  --syn-function: #82aaff;
+  --syn-class: #ffcb6b;
+  --syn-string: #8ee6b4;
+  --syn-number: #f9a26c;
+  --syn-meta: #ff79c6;
+  --syn-variable: #e8eaf0;
+  --syn-punctuation: #8f97b3;
+}
+
+/* ─── Code view (read-only source with line numbers) ──────────────────────── */
+.code-panel-content-flush {
+  padding: 0;
+}
+
+.code-view {
+  display: flex;
+  min-width: max-content;
+  min-height: 100%;
+  font-family: var(--font-code);
+  font-size: var(--code-font-size);
+  line-height: var(--code-line-height);
+}
+
+.code-view-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex-shrink: 0;
+  min-width: 3.4em;
+  padding: var(--space-4) var(--space-3) var(--space-4) var(--space-2);
+  text-align: right;
+  white-space: pre;
+  user-select: none;
+  color: var(--text-muted);
+  background: var(--bg-code);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.code-view-pre {
+  flex: 1;
+  margin: 0;
+  padding: var(--space-4);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre;
+  tab-size: var(--code-tab-size);
+}
+
+.code-view-pre code {
+  display: block;
+  padding: 0;
+  background: none;
+  border-radius: 0;
+  font-size: inherit;
+  white-space: pre;
+}
+
+.code-view-placeholder {
+  padding: var(--space-4);
+  font-family: var(--font-code);
+  font-size: var(--code-font-size);
+  color: var(--syn-comment);
+  font-style: italic;
+}
+
+/* ─── Syntax highlighting (highlight.js classes) ──────────────────────────── */
+.hljs {
+  color: var(--syn-text);
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+
+.hljs-doctag {
+  color: var(--syn-doctag);
+  font-style: italic;
+  font-weight: var(--font-weight-semibold);
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-section {
+  color: var(--syn-keyword);
+}
+
+.hljs-type,
+.hljs-title.class_.inherited__ {
+  color: var(--syn-type);
+}
+
+.hljs-built_in,
+.hljs-symbol {
+  color: var(--syn-builtin);
+}
+
+.hljs-title,
+.hljs-title.class_,
+.hljs-class .hljs-title {
+  color: var(--syn-class);
+}
+
+.hljs-title.function_,
+.hljs-title.function_.invoke__,
+.hljs-function .hljs-title {
+  color: var(--syn-function);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-template-tag,
+.hljs-addition {
+  color: var(--syn-string);
+}
+
+.hljs-number,
+.hljs-literal {
+  color: var(--syn-number);
+}
+
+.hljs-meta,
+.hljs-meta .hljs-keyword {
+  color: var(--syn-meta);
+}
+
+.hljs-meta .hljs-string {
+  color: var(--syn-string);
+}
+
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params,
+.hljs-property {
+  color: var(--syn-variable);
+}
+
+.hljs-attr,
+.hljs-attribute {
+  color: var(--syn-class);
+}
+
+.hljs-operator,
+.hljs-punctuation {
+  color: var(--syn-punctuation);
+}
+
+.hljs-subst {
+  color: var(--syn-text);
+}
+
+.hljs-deletion {
+  color: var(--accent-danger);
+}
+
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: var(--font-weight-bold); }
+
+/* ─── Markdown (writeups) ─────────────────────────────────────────────────── */
+.markdown-body {
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: var(--line-height-relaxed);
+  overflow-wrap: break-word;
+}
+
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  color: var(--text-primary);
+  line-height: var(--line-height-tight);
+  margin: 1.6em 0 0.6em;
+}
+
+.markdown-body h1 { font-size: 1.6em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border-subtle); }
+.markdown-body h2 { font-size: 1.35em; padding-bottom: 0.25em; border-bottom: 1px solid var(--border-subtle); }
+.markdown-body h3 { font-size: 1.15em; }
+.markdown-body h4 { font-size: 1em; }
+.markdown-body h5,
+.markdown-body h6 { font-size: 0.9em; color: var(--text-secondary); }
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote,
+.markdown-body table,
+.markdown-body .code-block {
+  margin: 0 0 1em;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.6em;
+}
+
+.markdown-body ul { list-style: disc; }
+.markdown-body ol { list-style: decimal; }
+.markdown-body ul ul { list-style: circle; }
+
+.markdown-body li {
+  margin: 0.3em 0;
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol,
+.markdown-body li > p {
+  margin: 0.3em 0;
+}
+
+.markdown-body li input[type="checkbox"] {
+  margin-right: 0.4em;
+}
+
+.markdown-body strong {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.markdown-body a {
+  color: var(--accent-tertiary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 1.6em 0;
+}
+
+.markdown-body blockquote {
+  border-left: 3px solid var(--accent-primary);
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-secondary);
+  background: var(--accent-primary-dim);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.markdown-body blockquote > :last-child { margin-bottom: 0; }
+
+.markdown-body img {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+}
+
+.markdown-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+.markdown-body th {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Inline code */
+.markdown-body :not(pre) > code {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-code);
+  border: 1px solid var(--border-subtle);
+  color: var(--accent-tertiary);
+  font-family: var(--font-code);
+  font-size: 0.86em;
+  white-space: break-spaces;
+}
+
+/* Fenced code blocks */
+.code-block {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-code);
+  overflow: hidden;
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.code-block-lang {
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.code-block-copy.copied {
+  color: var(--accent-secondary);
+}
+
+.code-block pre {
+  margin: 0;
+  padding: var(--space-4);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow-x: auto;
+  font-size: var(--code-font-size);
+  line-height: var(--code-line-height);
+  white-space: pre;
+  tab-size: var(--code-tab-size);
+}
+
+.code-block pre code {
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: inherit;
+  white-space: pre;
+}
+
+/* ─── Address chips & copyable hex ────────────────────────────────────────── */
+.address-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-code);
+  color: var(--text-secondary);
+  font-family: var(--font-code);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.address-chip::after {
+  content: '\29C9';
+  font-size: 0.95em;
+  opacity: 0.5;
+}
+
+.address-chip:hover,
+.address-chip:focus-visible {
+  color: var(--accent-tertiary);
+  border-color: var(--accent-tertiary);
+  outline: none;
+}
+
+.address-chip[hidden] {
+  display: none;
+}
+
+.form-group > .address-chip {
+  align-self: flex-start;
+  margin-top: var(--space-2);
+}
+
+.hex-copy {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.hex-copy:hover {
+  color: var(--accent-tertiary);
+}
+
+/* ─── Contract registry ───────────────────────────────────────────────────── */
+.registry-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.registry-list-compact {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.registry-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.registry-list-compact .registry-item {
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-secondary);
+}
+
+.registry-item-head,
+.registry-item-body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.registry-item-name {
+  font-family: var(--font-code);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.registry-item-actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.tag {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tag-challenge {
+  background: var(--accent-primary-dim);
+  color: var(--accent-primary);
+}
+
+.tag-user {
+  background: var(--accent-secondary-dim);
+  color: var(--accent-secondary);
+}
+
+/* ─── Quick interaction form ──────────────────────────────────────────────── */
+.param-type {
+  margin-left: var(--space-1);
+  font-family: var(--font-code);
+  font-size: 0.9em;
+  font-weight: var(--font-weight-normal);
+  text-transform: none;
+  color: var(--accent-tertiary);
+}
+
+.select-code {
+  font-family: var(--font-code);
+  font-size: var(--text-xs);
+}
+
+.input:disabled,
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Terminal: warnings were rendered without a color */
+.terminal-message.warning { color: var(--accent-warning); }

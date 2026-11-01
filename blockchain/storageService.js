@@ -131,32 +131,56 @@ class StorageService {
     this._writeData(data);
   }
 
-  // ─── Contract ABI Lookup ─────────────────────────────────────────────────
+  // ─── Contract Registry ───────────────────────────────────────────────────
 
-  async getContractAbi(contractName) {
+  /**
+   * Every contract deployed in the current chain session, challenge contracts
+   * first and then the player's own deployments (newest first). Heavy fields
+   * (ABI, source) are left out; use getContractByAddress() to fetch them.
+   */
+  async getContractRegistry() {
     const data = this._readData();
-    const lowerName = contractName.toLowerCase();
+    const challenge = data.deployedContracts.map((c) => ({
+      kind: 'challenge',
+      name: c.contractName || (c.fileName ? path.parse(c.fileName).name : ''),
+      address: c.address,
+      challengeName: c.challengeName || null,
+      fileName: c.fileName || null,
+      deployedAt: c.deployedAt || null,
+      hasSource: Boolean(c.challengeName && c.fileName),
+    }));
+    const user = [...data.userContracts].reverse().map((c) => ({
+      kind: 'user',
+      name: c.contractName || c.title || '',
+      address: c.address,
+      fileName: c.fileName || null,
+      deployer: c.deployer || null,
+      deployedAt: c.deployedAt || null,
+      hasSource: typeof c.source === 'string' && c.source.length > 0,
+    }));
+    return [...challenge, ...user];
+  }
 
-    // Search in deployed contracts
-    const deployed = data.deployedContracts.find((c) => {
-      const cName = (c.contractName || '').toLowerCase();
-      const fName = c.fileName ? path.parse(c.fileName).name.toLowerCase() : '';
-      return cName === lowerName || fName === lowerName;
-    });
+  /**
+   * Full record (ABI and, for user contracts, the deployed source) of the
+   * contract at `address`, or null if it is not registered.
+   * Challenge contracts take precedence; among user deployments the most
+   * recent one wins (an address is unique per chain session anyway).
+   */
+  async getContractByAddress(address) {
+    if (typeof address !== 'string' || !address) return null;
+    const target = address.toLowerCase();
+    const data = this._readData();
 
-    if (deployed) {
-      return { abi: deployed.abi, contractAddress: deployed.address };
-    }
+    const deployed = data.deployedContracts.find(
+      (c) => typeof c.address === 'string' && c.address.toLowerCase() === target
+    );
+    if (deployed) return { kind: 'challenge', ...deployed };
 
-    // Search in user contracts (most recent deployment first)
-    const user = [...data.userContracts].reverse().find((c) => {
-      const cName = (c.contractName || c.title || '').toLowerCase();
-      return cName === lowerName;
-    });
-
-    if (user) {
-      return { abi: user.abi, contractAddress: user.address };
-    }
+    const user = [...data.userContracts].reverse().find(
+      (c) => typeof c.address === 'string' && c.address.toLowerCase() === target
+    );
+    if (user) return { kind: 'user', ...user };
 
     return null;
   }
